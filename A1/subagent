@@ -1,0 +1,62 @@
+#!/usr/bin/perl -w
+
+use NetSNMP::OID(':all');
+use NetSNMP::agent(':all');
+use NetSNMP::ASN(':all');
+
+my $filename ="/tmp/A1/counters.conf";
+open(my $fh,"<:encoding(UTF-8)",$filename) or die "could not open file '$filename' $!"; 
+while(my $row = <$fh>){
+	chomp $row;
+	my @br_int = split ',', $row;
+	push @interfaces, $br_int[0]."\n";
+	push @counters, $br_int[1]."\n";
+}
+my $int_num = $#interfaces;
+close $fh;
+
+my $rootOID = ".1.3.6.1.4.1.4171.40";
+sub agent_handler {
+    my  ($handler, $registration_info, $request_info, $requests) = @_;
+    for ($request = $requests; $request; $request = $request->next()) {
+        my $my_oid = $request->getOID();
+	my @oid= split('\.', $my_oid);
+	my $len = $#oid;
+        if ($request_info->getMode() == MODE_GET) { 
+		my $time= time();   
+		if ($my_oid == new NetSNMP::OID($rootOID . ".1")) {
+		    $request->setValue(ASN_COUNTER, $time);
+		}
+		elsif ($my_oid > new NetSNMP::OID($rootOID . ".1")){
+		        for(my $i=0;$i<=$int_num;$i++){
+		    		if(($oid[$len]-1) == $interfaces[$i]){
+					$OID_value32=$counters[$i] * $time;
+		    		}
+		    	}
+		    	$request->setValue(ASN_COUNTER, $OID_value32);
+		}
+	 }
+    }
+}
+
+{
+    $subagent = 0;
+
+    my $custom_OID = new NetSNMP::OID($rootOID);
+    if (!$agent) {
+        $agent = new NetSNMP::agent('Name'=>'snmpd','AgentX' => 1);
+        $subagent = 1;
+    }
+    $agent->register("snmpd", $custom_OID, \&agent_handler);
+
+    if ($subagent) {
+        $running = 1;
+
+        while ($running) {
+            $agent->agent_check_and_process(0);
+        }
+
+        $agent->shutdown();
+    }
+
+}
