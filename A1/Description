@@ -1,0 +1,98 @@
+ Assignment
+Hide
+
+Sometimes it is desired to monitor custom metrics such as number of active HTTP connections etc., in addition to system metrics through SNMP. This allows for system as well as application monitoring through a common interface, SNMP. Through this assignment, students will learn to extend an SNMP agent to include custom OIDs to monitor such metrics.
+
+In this assignment, students will model an SNMP counter and make it available through an enterprise OID. Firstly, write an SNMP subagent that responds to SNMP requests asking for the following enterprise OIDs:
+
+ 
+1.3.6.1.4.1.4171.40.1	Current unix timestamp
+1.3.6.1.4.1.4171.40.2	Value of counter 1
+1.3.6.1.4.1.4171.40.3	Value of counter 2
+1.3.6.1.4.1.4171.40.4	Value of counter 3
+....	....
+1.3.6.1.4.1.4171.40.N	Value of counter N-1
+
+ 
+
+The values of the counters are generated based on the following function:
+
+ 
+
+y(t)=C*T;  (Make sure you only use the lower 32-bits when storing into OID)
+
+ 
+
+Where,
+
+    T is the current UNIX time of the agent, integer seconds since 1970-01-01. 
+    C is the bitrate of the process [0,10e9] bit/second. 
+
+C is provided though a configuration file, 'counters.conf' that has the following format (ONLY and example, config file should handle N counters):
+id,C	Description
+1,10e6	for counter 1,C = 10Mbps
+2, 5e6	for counter 2,C = 5Mbps
+3,100e6	for counter 3,C = 100Mbps
+
+ 
+
+Values of 'y' are the values of the counter. Secondly, configure SNMP agent to execute the subagent when an SNMP request is received.
+
+ 
+
+Following are the files to be submitted; Note: All files to be submitted with ".txt" extension so that plagiarism control will work.
+subagent.txt	SNMP Subagent Script, may be written in any language (perl, python)
+snmpd.conf.txt	The configuration file used by snmpd to provide the agent, keep it simple, just the bare minimum. Include port.
+
+ 
+
+ 
+
+ 
+
+---Technical Testing---: 
+
+The config should handle N counters, 
+
+Will be tested using snmpget, will test that it responds to .40.1, then that it handles request with OIDs in non sequential order (.40.3, .40.1, .40.2) and counters out of the range (.40.101). These are JUST examples. 
+
+ 
+
+Example of the content of a counters.conf file
+
+1,10e6
+2,5e6
+3,100e6
+4,1e9
+50,10
+55,124
+
+Obtained like 
+pal@Lab$ cat counters.conf 
+1,10e6
+2,5e6
+3,100e6
+4,1e9
+50,10
+55,124
+
+
+ 
+
+The solution will be tested by an automated script, the script will start by copying you entire solution (counters.conf, subagent and snmpd.conf) to the /tmp/A1 folder.
+
+It will then replace your counters.conf with a randomly generated file, where the numer of interfaces is random (between 1 and 100) and the C value is also random (between 0 and 10e9). 
+
+It will then start an snmpd that uses your snmpd.conf file as configuration (make sure that your solution snmpd.conf file is configured to read the subagent from the /tmp/A1 folder. 
+
+In the next stage. and external tool will be used to probe some random interfaces and match the rates against the once used in the counters.conf file that was provided during the test case. 
+
+ 
+
+If you solution provides the correct rates (all the time), then the solution is technically ok. If you solution fails at any part of the test, its not accepted. 
+
+ 
+
+A note wrt. Test scripts.
+
+As some people have viewed the test scripts as ’absolute’ truths, i.e. the answer to the exam questions. I have decided to remove the test scripts. The assignments have no changed, the requirements on the solution has remain the same all the time. The updates that have been made to the test scripts have been done as to test this 1) better, 2) more efficiently and 3) provide better feedback. But as to remove confusion; I remove my test scripts.
