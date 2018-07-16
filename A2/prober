@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+
+use Net::SNMP;
+use Time::HiRes qw(usleep gettimeofday);
+use Math::Round;
+
+die "[Usage]:$0 <Agent IP:port:community> <sample frequency> <samples> <OID1> <OID2> …….. <OIDn>" if @ARGV < 4 ;
+
+$agent_info_all = $ARGV[0];
+$sample_fr = $ARGV[1];
+$num_samples = $ARGV[2];
+$num_oid = $#ARGV;
+$sample_time = (1/$sample_fr);
+
+if($num_samples == -1){
+	$num_samples = "inf";
+}
+
+push @my_oids, "1.3.6.1.2.1.1.3.0";
+
+for(my $y =3;$y<=$num_oid;$y++){
+	push @my_oids, $ARGV[$y];
+}
+
+
+my $oid_len = $#my_oids;
+
+@agent_info = split ':',$agent_info_all;
+
+my $agent_ip = $agent_info[0];
+my $port = $agent_info[1];
+my $community = $agent_info[2];
+
+my ($session, $error) = Net::SNMP->session(
+      -hostname  => $agent_ip,
+      -community => $community,
+      -port     => $port,
+      -version => snmpv2c, 
+      -nonblocking =>1,
+      -retries => 0,
+      -timeout => 3,
+      #-debug  => DEBUG_ALL,
+      -translate   => [
+           -timeticks => 0x0 ,  # Turn off so sysUpTime is numeric
+      ]
+   );
+
+   if (!defined $session) {
+      printf "ERROR: %s.\n", $error;
+      exit 1;
+   }
+
+for(my $z=0;$z<=$num_samples;$z++){
+    my $result = $session->get_request(
+         -varbindlist => \@my_oids ,
+         -callback    => [\&get_callback,$z] ,
+      );
+
+$time_callback_start = gettimeofday;
+
+$session->snmp_dispatcher();
+
+$time_callback_end = gettimeofday;
+
+$time_callback = $time_callback_end - $time_callback_start ;
+
+if($time_callback > 0.1){
+	$sample_time1 = $sample_time - $time_callback;
+	Time::HiRes::sleep($sample_time1);	
+}
+
+else{
+	Time::HiRes::sleep($sample_time);
+}
+
+} 
+
+exit 0;
+
+sub get_callback{
+     my ($session,$z) = @_;
+
+     $time_oid = gettimeofday;
+     my $result = $session->var_bind_list();
+     my $types  = $session->var_bind_types();
+
+     if (!defined $result) {
+         printf "ERROR: Get request failed for host '%s': %s.\n",
+                $session->hostname(), $session->error();
+         return;
+     }
+     if($z!=0){	
+	print round($time_oid)," | ";
+     }
+
+for(my $i=1;$i<=$oid_len;$i++){
+	$oid_result = $result->{$my_oids[$i]};
+	$oidvalue{$my_oids[$i]}= $oid_result;
+	$oid_type = $types->{$my_oids[$i]};
+	
+	if(!exists $prev_value{$my_oids[$i]}){
+	$prev_value{$my_oids[$i]} = $oidvalue{$my_oids[$i]};
+	$prev_time{$my_oids[$i]} = $time_oid;
+	next;
+        }
+	$new_value{$my_oids[$i]} = $oidvalue{$my_oids[$i]};
+	$new_time{$my_oids[$i]} = $time_oid;
+
+        $sample_diff = $new_value{$my_oids[$i]} - $prev_value{$my_oids[$i]};
+	$time_diff = $new_time{$my_oids[$i]}-$prev_time{$my_oids[$i]};
+	$time_diff = nearest(0.1,$time_diff);
+	$rate = $sample_diff/$time_diff;
+
+	RATE:
+	if($rate < 0){
+		if($oid_type == 65){
+			$max_value = (2**32);
+			$new_value{$my_oids[$i]} += $max_value;
+			$sample_diff = $new_value{$my_oids[$i]} - $prev_value{$my_oids[$i]};
+			$time_diff = $new_time{$my_oids[$i]}-$prev_time{$my_oids[$i]};
+	                $time_diff = nearest(0.1,$time_diff);
+			$rate = $sample_diff/$time_diff;
+			goto RATE;
+		}
+		elsif($oid_type == 70){
+			$max_value = (2**64);
+			$new_value{$my_oids[$i]} += $max_value;
+			$sample_diff = $new_value{$my_oids[$i]} - $prev_value{$my_oids[$i]};
+			$time_diff = $new_time{$my_oids[$i]}-$prev_time{$my_oids[$i]};
+	                $time_diff = nearest(0.1,$time_diff);
+			$rate = $sample_diff/$time_diff;
+			goto RATE;
+		}
+	}
+        print round($rate)," | ";
+ 	$prev_value{$my_oids[$i]} = $new_value{$my_oids[$i]};
+	$prev_time{$my_oids[$i]} = $new_time{$my_oids[$i]};
+
+}
+if($z != 0){
+         print "\n";
+}
+return;
+}

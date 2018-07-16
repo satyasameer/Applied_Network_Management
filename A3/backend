@@ -1,0 +1,43 @@
+#!/usr/bin/python -u
+
+from influxdb import InfluxDBClient
+import subprocess
+import time
+import sys
+import os
+
+sys.argv[0]='/tmp/A2/prober'
+sys.argv.insert(3,'-1')
+num=len(sys.argv)
+print sys.argv
+
+username = 'ats'
+passwd = 'atslabb00'
+db = 'A3'
+host='localhost'
+port='8086'
+metric = 'rate'
+
+client = InfluxDBClient(host, port, username, passwd, db)
+
+proc = subprocess.Popen(sys.argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+
+for sample in iter(proc.stdout.readline,''):
+       	sample.rstrip('\n')
+	values = sample.split('|')
+	for i in range(4,num):
+		json_data = {
+			"measurement": metric,
+				'fields':  {
+				'value':float(values[i-3].rstrip('\n')),
+				},
+				'time': int(values[0]),
+				'tags': {
+				"oid": sys.argv[i],
+					}
+				}
+		data = [json_data]
+		print ("inserting data")
+		client.write_points(points=data,time_precision="s")
+		time.sleep(0.4)
+	

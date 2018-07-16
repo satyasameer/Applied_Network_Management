@@ -1,0 +1,167 @@
+#!/usr/bin/perl -w 
+
+use Data::Dumper;
+use Net::SNMP;
+use NetSNMP::TrapReceiver;
+use DBI;
+
+my $dbfile  = "anm.db";
+my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile","","");
+
+
+my $create = qq(CREATE TABLE IF NOT EXISTS stat(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+DEV_NAME CHAR(50) NOT NULL,
+STATUS   INT      NOT NULL,
+TIME     CHAR(50) NOT NULL,
+OLD_STATUS INT,
+OLD_TIME CHAR(50)
+););
+
+$dbh->do($create);
+
+my $del = qq(DELETE FROM stat;);
+$dbh->do($del);
+
+
+ sub my_receiver {
+      print "********** PERL RECEIVED A NOTIFICATION:\n";
+$i=1;
+      print "VARBINDS:\n";
+      foreach my $x (@{$_[1]}) { 
+	$key = "".$x->[0];
+	$value = $x->[1];
+	$time = localtime();
+	if($key eq ".1.3.6.1.4.1.41717.10.1"){
+		$dev_name = $value;
+        }
+
+	if($key eq ".1.3.6.1.4.1.41717.10.2"){
+		$status = $value;
+        }
+	
+
+      }
+print "$dev_name--$status\n"; 
+### UPDATE AND INSERT TRAP INFO
+print " UPDATE AND INSERT TRAP INFO\n";
+$sel_stat = qq(SELECT * FROM stat;);
+$sth_stat = $dbh->prepare( $sel_stat );
+$rv_sel = $sth_stat->execute() or die $DBI::errstr;
+
+
+while(@row = $sth_stat->fetchrow_array()) {
+       $row[1] = qq(\"$row[1]\");
+    if ($dev_name eq $row[1]){
+        $up_stat = qq(UPDATE stat SET STATUS=$status,TIME="$time",OLD_STATUS=$row[2],OLD_TIME="$row[3]" WHERE DEV_NAME=$dev_name;);
+        $dbh->do($up_stat) or die $DBI::errstr;
+	print "Updated---Done!!\n";
+        goto START;
+    }
+
+}
+$ins_stat = qq(INSERT INTO stat (DEV_NAME,STATUS,TIME,OLD_STATUS,OLD_TIME)
+               VALUES ($dev_name,$status,"$time",$status,"$time"););
+$dbh->do($ins_stat) or die $DBI::errstr;
+   print "inserted\n";
+
+
+START:
+
+#####SENDING TRAPS
+my $sel_db = qq(SELECT * FROM db ORDER BY id DESC LIMIT 1;);
+my $sth_db = $dbh->prepare( $sel_db );
+my $rv_db = $sth_db->execute() or die $DBI::errstr;
+
+if($rv_db < 0) {
+   print $DBI::errstr;
+}
+
+while(my @row = $sth_db->fetchrow_array()) {
+      $IP = $row[1];
+      $PORT = $row[2];
+      $COMMUNITY = $row[3];
+      print "$IP--$PORT--$COMMUNITY\n";
+}
+
+my ($session, $error) = Net::SNMP->session(
+      -hostname  => $IP,
+      -community => $COMMUNITY,
+      -port     => $PORT,
+      -version => snmpv1, 
+   );
+
+ if (!defined $session) {
+         printf "ERROR: Failed to create session %s.\n",
+                $error;
+         exit;
+      }
+
+my $sel_stat = qq(SELECT * FROM stat;);
+my $sth_stat = $dbh->prepare( $sel_stat );
+my $rv_sel = $sth_stat->execute() or die $DBI::errstr;
+
+@oid_value=();
+
+while(@row = $sth_stat->fetchrow_array()) {
+
+#SEND TRAP IF FAIL
+if ($row[2] == 3 ){
+print "FAIL STATE\n";
+ $fail_dev = $row[1];
+ $fail_time = $row[3];
+ $fail_old_status = $row[4];
+ $fail_old_time = $row[5];
+$oid_fail = "1.3.6.1.4.1.41717.20.";
+print "###DEBUG####\n";
+print "$row[1]--$row[2]\n";
+push @oid_value,($oid_fail."1",OCTET_STRING,$fail_dev,$oid_fail."2",OCTET_STRING,$fail_time,$oid_fail."3",INTEGER,$fail_old_status,$oid_fail."4",OCTET_STRING,$fail_old_time);
+ 
+}
+}
+
+#SEND TRAP IF DANGER
+
+my $sel_stat1 = qq(SELECT * FROM stat;);
+my $sth_stat1 = $dbh->prepare( $sel_stat1 );
+$sth_stat1->execute() or die $DBI::errstr;
+
+
+while(@row1 = $sth_stat1->fetchrow_array()) {
+
+if ($row1[2] == 2){
+print "DANGER STATE--$row1[4]\n";
+ $danger_dev = $row1[1];
+ $danger_time = $row1[3];
+ $danger_old_status = $row1[4];
+ $danger_old_time = $row1[5];
+$oid_danger = "1.3.6.1.4.1.41717.30.";
+print "###DEBUG####\n";
+print "$row1[1]--$row1[2]\n";
+push @oid_value,($oid_danger.$i,OCTET_STRING,$danger_dev,$oid_danger.(++$i),OCTET_STRING,$danger_time,$oid_danger.(++$i),INTEGER,$danger_old_status,$oid_danger.(++$i),OCTET_STRING,$danger_old_time);
+++$i;
+}
+
+}
+$result = $session->trap(
+                          -enterprise      => "1.3.6.1.4.1.41717",
+                          -agentaddr       => "127.0.0.1",
+                          -generictrap     => 6,
+                          -specifictrap    => 247,
+                          -varbindlist      => \@oid_value,
+                       );
+
+if (!defined $result) {
+      printf "ERROR: %s\n", $session->error();
+      $session->close();
+      exit 1;
+}
+
+
+
+
+}
+
+  NetSNMP::TrapReceiver::register("all", \&my_receiver) || 
+    warn "failed to register our perl trap handler\n";
+

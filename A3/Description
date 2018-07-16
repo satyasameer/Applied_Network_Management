@@ -1,0 +1,79 @@
+
+Assignment
+Hide
+
+Write a wrapper script around the SNMP prober designed in A2 and send the output to InfluxDB after necessary processing.
+
+Configure Grafana to generate graphs from InfuxDB.
+
+ 
+
+Note: The 'backend' script will be called with similar argments as the 'prober' script in Assignment-2 i.e,
+
+           backend <Agent IP:port:community> <sample frequency> <OID1> <OID2> …….. <OIDn>
+
+ 
+
+Hint: Implement A2, so that if the number of samples required is -1, then it runs forever. 
+
+ 
+
+Following are the files to be submitted:  Note: All files to be submitted with ".txt" extension so that plagiarism control will work.
+backend.txt	Wrapper script, may be written in any language (perl, python)
+dashboard.json.txt	Grafana dashboard that you desinged, use the export json functionallity in Grafana. 
+
+ 
+
+ 
+
+--Technical Testing--
+
+The solution will be tested by a script that:- runs the backend against a device with an known behavior.- imports the dashboard in to Grafana
+
+- Evaluates the graphs in grafana against the expected pattern, and that all the OIDs are showing up as tags. 
+
+ 
+
+To enable testing
+
+- InfluxDB will be accessed on localhost, credentials ats/atslabb00 
+
+- The InfluxDB database is named A3, use the OID's as tags, the measurement is called rate. Make sure that you store the sample time (as obtained from A2) as timevalue. 
+
+- Grafana has a datasouce called A3 that is connected to the Influx A3 Database. 
+
+- Do not EXPORT your Dashboard using the export function in Grafana, instead use the (HTTP) API 
+
+curl -u <grafana_user>:<grafana_userpwd>  http://<yourgrafanaserver>:3000/api/dashboards/db/<your dashboard>  > dashboard.json.txt
+
+- Updates your solution should to run another version of A2. To simplify this; call A2 with a complete path, /tmp/A2/prober. All occurances of A2 will be replaced with refA2, cp backend backend.test; sed -i 's/A2/refA2/g' backend.test, then it will use backend.test to test (thus your solution is 'untouched'). 
+
+- Your solution will be executed in a random directory; hence do not assume any path. 
+
+- Your dashboard should use a 10 minutes window, with a refresh rate of 10s. Hint: if you have troubles having Grafana rendering the data, see https://github.com/grafana/grafana/issues/6868. 
+
+ 
+
+The A3 database has the following information
+
+> show tag keys
+name: rate
+tagKey
+------
+oid
+
+> show field keys
+name: rate
+fieldKey  fieldType
+--------  ---------
+value     float
+timevalue float
+
+ 
+
+ 
+
+A note wrt. Test scripts.
+
+As some people have viewed the test scripts as ’absolute’ truths, i.e. the answer to the exam questions. I have decided to remove the test scripts. The assignments have no changed, the requirements on the solution has remain the same all the time. The updates that have been made to the test scripts have been done as to test this 1) better, 2) more efficiently and 3) provide better feedback. But as to remove confusion; I remove my test scripts.
+
